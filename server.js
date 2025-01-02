@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -5,13 +6,19 @@ const Stripe = require('stripe');
 
 // Initialize Express app and Stripe with your secret key
 const app = express();
-const stripe = new Stripe('sk_test_51QWMaiC2SQuTnTNRnOSYSArT4j8NclUWd68HLC49bDrJDBDroTE8k9odficET3PKzB8CkVx9qYaECX8M2Ic0dMzF00Q5PidwMW'); // Replace with your actual Stripe secret key
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// Default route for the root path
+// Validate Stripe secret key
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('Error: STRIPE_SECRET_KEY is not defined in environment variables.');
+  process.exit(1); // Exit the process if the key is missing
+}
+
+// Root route
 app.get('/', (req, res) => {
   res.send('Welcome to the Stripe Payment Backend!');
 });
@@ -20,24 +27,34 @@ app.get('/', (req, res) => {
 app.post('/create-payment-intent', async (req, res) => {
   const { amount, currency } = req.body;
 
+  // Input validation
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid or missing "amount" in the request body.' });
+  }
+
+  if (!currency || typeof currency !== 'string') {
+    return res.status(400).json({ error: 'Invalid or missing "currency" in the request body.' });
+  }
+
   try {
     // Create a Payment Intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount, // Amount in the smallest currency unit (e.g., cents for USD)
-      currency,
-      payment_method_types: ['card'], // Accept card payments
+      amount: Math.round(amount), // Ensure amount is an integer
+      currency: currency.toLowerCase(), // Ensure currency is lowercase
+      payment_method_types: ['card'], // Specify payment methods
     });
 
-    // Send the client secret to the frontend
-    res.json({
-      clientSecret: paymentIntent.client_secret,
-    });
+    // Respond with the client secret
+    res.status(200).json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to create Payment Intent. Please try again later.' });
   }
 });
-const IP_ADDRESS = '192.168.0.161'; // Update with your local network IP address
+
+// Server listener
+const PORT = process.env.PORT || 3001;
+const IP_ADDRESS = process.env.IP_ADDRESS || '127.0.0.1'; // Update to localhost for local testing
 app.listen(PORT, IP_ADDRESS, () => {
   console.log(`Server is running at http://${IP_ADDRESS}:${PORT}`);
 });
